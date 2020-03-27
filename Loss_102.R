@@ -175,13 +175,13 @@ Data_P[,Count:=1:.N, by="LOAN_ID"]
 # Obtain the date of the first time each loan was modified
 FMOD_DTE = Data_P[, .SD[MOD_FLAG =="Y"][,c("FMOD_DTE", "FMOD_UPB"):=list(Monthly.Rpt.Prd, LAST_UPB)]][, .SD[1], by = "LOAN_ID"][,c("LOAN_ID", "FMOD_DTE", "FMOD_UPB"), with = FALSE, drop = FALSE]
 
-# Obtain the date and UPB of each loan's first credit event (i.e. 180 days SDQ, or Foreclosure or Default)
+# Obtain the date and UPB of each loan's first credit event (i.e. 90 days SDQ, or Foreclosure or Default)
 First_CE = Data_P[, .SD[Zero.Bal.Code =="03" | Zero.Bal.Code =="09" 
-                        | (Delq.Status<999 & Delq.Status>= 6)][,c("FCE_DTE", "FCE_UPB", "SPDelq1", "CountFC")
+                        | (Delq.Status<999 & Delq.Status>= 3)][,c("FCE_DTE", "FCE_UPB", "SPDelq1", "CountFC")
                                                                := list(Monthly.Rpt.Prd, LAST_UPB, Delq.Status, Count)]][, .SD[1], by = "LOAN_ID"][,c("LOAN_ID", "SPDelq1", "FCE_DTE", "FCE_UPB", "CountFC"), with = FALSE, drop = FALSE]
 
-# Obtain the date and UPB of each loan becoming 180 days delinquent 
-First_D180 = Data_P[, .SD[Delq.Status<999 & Delq.Status >=6][,c("F180_DTE", "F180_UPB", "SPDelq2", "CountF1"):= 
+# Obtain the date and UPB of each loan becoming 90 days delinquent 
+First_D180 = Data_P[, .SD[Delq.Status<999 & Delq.Status >=3][,c("F180_DTE", "F180_UPB", "SPDelq2", "CountF1"):= 
                                                                list(Monthly.Rpt.Prd, LAST_UPB, Delq.Status, Count)]][, .SD[1], by = "LOAN_ID"][,c("LOAN_ID", "F180_DTE", "F180_UPB", "SPDelq2", "CountF1"), with = FALSE, drop = FALSE]
 
 # Summarize Perfomance data by keeping only the last row of a loan's activity
@@ -228,7 +228,7 @@ Data_P[First_CE, c("FCE_DTE", "FCE_UPB", "SPDelq1", "CountFC"):=list(i.FCE_DTE, 
 Data_P[First_D180, c("F180_DTE", "F180_UPB", "SPDelq2", "CountF1"):=list(i.F180_DTE, i.F180_UPB, i.SPDelq2, i.CountF1)]
 
 # Delete Performance variables that are not needed.
-Data_P[, c("Count", "Monthly.Rpt.Prd", "ZB_DTE", "ORIG_RT", "Servicer.Name", "Loan.Age", "Months.To.Legal.Mat", "Adj.Month.To.Mat", "Maturity.Date", "Delq.Status","total_expense", "total_proceeds", "lpi2disp"):=NULL]
+Data_P[, c("Count", "Monthly.Rpt.Prd", "ZB_DTE", "ORIG_RT", "Loan.Age", "Months.To.Legal.Mat", "Delq.Status", "Adj.Month.To.Mat", "Maturity.Date", "total_expense", "total_proceeds", "lpi2disp"):=NULL]
 
 # Remove not-needed data from R environment.
 rm("First_D180", "First_CE", "FMOD_DTE", "Performance_Variables", "Performance_ColClasses")
@@ -243,9 +243,9 @@ Combined_Data = as.data.table(merge(Data_A, Data_P, by.x = "LOAN_ID", by.y = "LO
 Combined_Data[,c("VinYr", "ActYr", "DispYr", "F180_UPB", "FCE_UPB") :=list(format(as.yearmon(ORIG_DTE, format="%m/%Y"), "%Y"),
                                                                            format(as.yearmon(LAST_DTE, format="%m/%Y"), "%Y"),
                                                                            ifelse(!(is.na(DISP_DT)), format(as.yearmon(DISP_DT, format="%m/%Y"), "%Y"), 'NO DISP_DT'),
-                                                                           ifelse((SPDelq2==6 & is.na(F180_UPB) & CountF1<=6), ORIG_AMT, 
+                                                                           ifelse((SPDelq2==3 & is.na(F180_UPB) & CountF1<=3), ORIG_AMT, 
                                                                                   ifelse(!(is.na(F180_UPB)),F180_UPB ,0)), 
-                                                                           ifelse((SPDelq1==6 & CountFC <=6 & is.na(FCE_UPB)), ORIG_AMT, 
+                                                                           ifelse((SPDelq1==3 & CountFC <=3 & is.na(FCE_UPB)), ORIG_AMT, 
                                                                                   ifelse(!(is.na(FCE_UPB)),FCE_UPB ,0)))]
 
 # Calculate Modification Costs when loans default
@@ -265,15 +265,6 @@ registerDoSEQ()
 
 Combined_Data<-rbindlist(Combined_Data, fill=TRUE)
 
-sum(!Combined_Data$F180_DTE %>% is.na())
-
-defaulted_data <- Combined_Data[!is.na(F180_DTE),,]
-
-paste0("01/", defaulted_data$ORIG_DTE) %>% as.Date(format = "%d/%m/%Y") %>% hist(breaks = seq.Date(min(.), max(.), length.out =  50))
-paste0(defaulted_data$F180_DTE) %>% as.Date(format = "%Y-%m-%d") %>% hist(breaks = seq.Date(min(.), max(.), length.out =  50))
-
-
-
 
 # Save a Copy to disk or write a .txt file.
 save(Combined_Data, file="FNMA_Performance_Data.Rda")
@@ -286,7 +277,17 @@ rm(list= ls()[!(ls() %in% c('Combined_Data'))])
 
 
 
+sum(!Combined_Data$F180_DTE %>% is.na())
 
+defaulted_data <- Combined_Data[!is.na(F180_DTE),,]
+
+paste0("01/", defaulted_data$ORIG_DTE) %>% as.Date(format = "%d/%m/%Y") %>% hist(breaks = seq.Date(min(.), max(.), length.out =  50))
+paste0(defaulted_data$F180_DTE) %>% as.Date(format = "%Y-%m-%d") %>% hist(breaks = seq.Date(min(.), max(.), length.out =  50))
+
+
+
+
+defaulted_data
 
 
 
