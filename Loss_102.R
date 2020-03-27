@@ -34,10 +34,10 @@ if (!(require(zoo))) install.packages ("zoo")
 # and then repeat that process for all matching files.
 
 # You will need the path to where you have saved the downloaded files, please copy and paste or type the path below.
-fileslocation<- "/Users/Max/Desktop/MA/2018Q4"
+fileslocation<- "/Users/Max/Desktop/FannieMae/Data"
 
 # Check the number of files downloaded (should be even, equal number of Acquisition and Performance Files).
-numberoffiles<-length(list.files(fileslocation, pattern = glob2rx("*txt"), full.names=TRUE))
+numberoffiles<-length(list.files(fileslocation, pattern = glob2rx("*txt"), full.names=TRUE, recursive = TRUE))
 
 # The "foreach" package contructs a loop so that R can iterate through all pairs of related Acquisition and Performance files.
 # Calculate the number of iterations/cores in parallel processing allowing each pair to be processed simultaneously.
@@ -75,8 +75,10 @@ na.lomf_L <- function(x) {
 }
 
 
-#library(doMC)
-#registerDoMC(30)
+library(parallel)
+
+cl <- makeCluster(4, "SOCK",  out.file = "")
+doParallel::registerDoParallel(cl)
 
 ####################################################################
 # Start of Part 1; Data Preperation Step
@@ -85,10 +87,10 @@ na.lomf_L <- function(x) {
 # After defining the Acquisition and Performance variables and their classes, the files are read into R and then data manipulation is carried out. 
 # Acquisition and Performance files (from one or many quarters) will be merged into an R dataframe called "Combined_Data."
 Combined_Data <- foreach(k=1:numberofloops, .inorder=FALSE,
-           .packages=c("data.table", "zoo")) %do% {
+           .packages=c("data.table", "zoo")) %dopar% {
 
 # Define Acquisition variables and classes, and read the files into R.
-Acquisitions <- list.files(fileslocation, pattern = glob2rx("*Acquisition*txt"), full.names=TRUE)
+Acquisitions <- list.files(fileslocation, pattern = glob2rx("*Acquisition*txt"), full.names=TRUE, recursive = TRUE)
 
 Acquisitions_Variables = c("LOAN_ID", "ORIG_CHN", "Seller.Name", "ORIG_RT", "ORIG_AMT", "ORIG_TRM", "ORIG_DTE"
                            ,"FRST_DTE", "OLTV", "OCLTV", "NUM_BO", "DTI", "CSCORE_B", "FTHB_FLG", "PURPOSE", "PROP_TYP"
@@ -123,7 +125,7 @@ Performance_ColClasses = c("character", "character", "character", "numeric", "nu
                            "character", "character", "character", "character", "character", "character", "character", "character",
                            "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", "numeric", "character", "numeric", "character")
 
-Performance <- list.files(fileslocation, pattern = glob2rx("*Performance*txt"), full.names=TRUE)
+Performance <- list.files(fileslocation, pattern = glob2rx("*Performance*txt"), full.names=TRUE, recursive = TRUE)
 
 # Read and Process Performance data
 Data_P = fread(Performance[k], sep = "|", colClasses = Performance_ColClasses, showProgress=FALSE)
@@ -258,7 +260,20 @@ return(Combined_Data)
 
 }
 
+stopCluster(cl)
+registerDoSEQ()
+
 Combined_Data<-rbindlist(Combined_Data, fill=TRUE)
+
+sum(!Combined_Data$F180_DTE %>% is.na())
+
+defaulted_data <- Combined_Data[!is.na(F180_DTE),,]
+
+paste0("01/", defaulted_data$ORIG_DTE) %>% as.Date(format = "%d/%m/%Y") %>% hist(breaks = seq.Date(min(.), max(.), length.out =  50))
+paste0(defaulted_data$F180_DTE) %>% as.Date(format = "%Y-%m-%d") %>% hist(breaks = seq.Date(min(.), max(.), length.out =  50))
+
+
+
 
 # Save a Copy to disk or write a .txt file.
 save(Combined_Data, file="FNMA_Performance_Data.Rda")
