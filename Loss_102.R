@@ -34,7 +34,7 @@ if (!(require(zoo))) install.packages ("zoo")
 # and then repeat that process for all matching files.
 
 # You will need the path to where you have saved the downloaded files, please copy and paste or type the path below.
-fileslocation<- "/Users/Max/Desktop/FannieMae/Data"
+fileslocation<- "../Data"
 
 # Check the number of files downloaded (should be even, equal number of Acquisition and Performance Files).
 numberoffiles<-length(list.files(fileslocation, pattern = glob2rx("*txt"), full.names=TRUE, recursive = TRUE))
