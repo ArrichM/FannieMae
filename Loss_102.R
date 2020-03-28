@@ -268,6 +268,7 @@ Combined_Data<-rbindlist(Combined_Data, fill=TRUE)
 
 # Save a Copy to disk or write a .txt file.
 save(Combined_Data, file="FNMA_Performance_Data.Rda")
+# load(file="FNMA_Performance_Data.Rda")
 
 # Remove all objects created besides the final data set.
 rm(list= ls()[!(ls() %in% c('Combined_Data'))])
@@ -276,28 +277,78 @@ rm(list= ls()[!(ls() %in% c('Combined_Data'))])
 rm(list= ls()[!(ls() %in% c('Combined_Data'))])
 
 
+# Get dataset for LGD estimation
+default_data <- Combined_Data[!is.na(F180_DTE)]
 
-sum(!Combined_Data$F180_DTE %>% is.na())
+date_cols <- grep("DTE", colnames(Combined_Data), value = TRUE) %>% .[-grep("F180|FMOD|LAST",.)]
+to_date <- function(x) as.Date(paste0("01/", x), format = "%d/%m/%Y")
 
-defaulted_data <- Combined_Data[!is.na(F180_DTE),,]
-
-paste0("01/", defaulted_data$ORIG_DTE) %>% as.Date(format = "%d/%m/%Y") %>% hist(breaks = seq.Date(min(.), max(.), length.out =  50))
-paste0(defaulted_data$F180_DTE) %>% as.Date(format = "%Y-%m-%d") %>% hist(breaks = seq.Date(min(.), max(.), length.out =  50))
-
-
-
-
-defaulted_data
+# transform date vars
+default_data[, (date_cols) := lapply(.SD, to_date), .SDcols = date_cols]
+# add lgd
+default_data <- default_data[NET_LOSS > 0][, LGD := NET_LOSS / ORIG_AMT]
 
 
 
+keep_cols <- default_data[, sapply(.SD, function(x) sum(is.na(x))==0 & is.numeric(x))]
+keep_cols <- names(keep_cols)[keep_cols]
+
+keep_cols <- keep_cols[!grepl("PROCS|LOSS|Cost|Tot|LAST|Fin|cost|COST|zb|F180|FCE|NET|MOD", keep_cols)]
+
+num_data <- default_data[, ..keep_cols]
+num_data[, LGD := ifelse(LGD <=1, LGD, 1)]
+num_data_test <- num_data[1:50]
+num_data <-  num_data[-c(1:50)]
+
+
+library(ranger)
+library(gbm)
+library(mgcv)
+
+ranger_model <- ranger(LGD~., num_data, num.trees = 100000)
+gbm_model <- gbm(LGD~., data = num_data, n.trees = 600)
+glm_model <- glm(LGD~., data = num_data, family = "binomial")
+
+
+library(paraparsnip)
+
+gam_formula(LGD~., num_data, k = 20)$form
+
+gam_model <- gam(gam_formula(LGD~., num_data, k = 6)$form, data = num_data, family = "quasibinomial")
+lm_model <- lm(LGD~., num_data)
 
 
 
 
+(num_data_test$LGD - predict(gam_model, num_data_test, type = "response"))^2 %>% mean
+(num_data_test$LGD - predict(lm_model, num_data_test))^2 %>% mean
+(num_data_test$LGD - predict(gbm_model, num_data_test, n.trees = 100))^2 %>% mean
+(num_data_test$LGD - predict(ranger_model, num_data_test)$predictions)^2 %>% mean
+(num_data_test$LGD - mean(num_data_test$LGD))^2 %>% mean
 
 
+library(keras)
 
+mod <- keras_model_sequential() %>%
+  layer_dense(128, activation = "relu", input_shape = c(dim(num_data)[[2]]-1)) %>%
+  layer_dropout(0.2) %>% 
+  layer_dense(128, activation = "relu") %>%
+  layer_dropout(0.2) %>% 
+  layer_dense(1, activation = "sigmoid")
+
+mod %>% keras::compile(
+  optimizer = "adam",
+  loss = "mse",
+  metrics = c('mse'))
+
+mod %>% keras::fit(
+  x = num_data %>% dplyr::select(-LGD) %>% data.matrix() %>% scale(),
+  y =  num_data %>% dplyr::pull(LGD),
+  epochs = 200,
+  batch_size = 64,
+  validation_split = 0.2)
+
+(num_data_test$LGD - mod %>% predict(num_data_test %>% dplyr::select(-LGD) %>% data.matrix() %>% scale()))^2 %>% mean
 
 
 
