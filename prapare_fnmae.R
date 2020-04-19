@@ -165,11 +165,11 @@ data_lgd <- foreach(i = 1:length(files_clean), .combine = rbind, .packages = c("
 }
 
 
-
 data_lgd %>% nrow()
 # remove loan id
-data_lgd[, LOAN_ID:=NULL]
-# SJtrip white space
+data_lgd[, c("LOAN_ID","ZIP_3", "LAST_DTE", "FRST_DTE", "F180_DTE", "STATE", "DEF_DTE", "DISP_DTE", "LAST_STAT"):=NULL]
+
+# Strip white space
 data_lgd[ , (names(data_lgd)) := lapply(.SD, str_trim), .SDcols = names(data_lgd)]
 # check dtypes
 lgd_readr <- readr::read_csv(files_clean[[30]])
