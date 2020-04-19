@@ -150,26 +150,39 @@ csvs <- foreach(i = 1:length(files), .combine = rbind, .packages = c("data.table
 }
 
 
-## READ DATA ------------------------------------------------------------------
+## FILTER LGD DATA ------------------------------------------------------------------
 
 
+files_clean <- list.files("/Users/Max/Desktop/FannieMae 1/csv/train",full.names = T)
 
-data <- foreach(i = 1:length(files), .combine = rbind, .packages = c("data.table", "zoo")) %dopar% {
+
+data_lgd <- foreach(i = 1:length(files_clean), .combine = rbind, .packages = c("data.table", "zoo")) %dopar% {
   # Load Data
-  load(files[[i]])
-  as.data.table(Combined_Data)
+  data <- fread(files_clean[[i]])
+  data <- data[DEF == 1]
+  gc()
+  data
 }
 
 
 
+data_lgd %>% nrow()
+# remove loan id
+data_lgd[, LOAN_ID:=NULL]
+# SJtrip white space
+data_lgd[ , (names(data_lgd)) := lapply(.SD, str_trim), .SDcols = names(data_lgd)]
+# check dtypes
+lgd_readr <- readr::read_csv(files_clean[[30]])
+data_types <- sapply(lgd_readr, class)
+# save resutly to disk
+write.csv(data_types, "/Users/max/Desktop/paraloq/sagemaker/data_vae/fnmae_dtypes.csv", row.names = FALSE)
+fwrite(data_lgd, "/Users/max/Desktop/paraloq/sagemaker/data_vae/fnmae_defaults.csv", row.names = FALSE)
 
-
-
-
-
-
-
-
+# some plotting
+counts <- data_lgd[,.N, by = .(F180_DTE)][, F180_DTE:= as.Date(F180_DTE)][order(F180_DTE)] %>% as_tibble()
+lgd_mean <- data_lgd[,mean(as.numeric(LGD)), by = .(F180_DTE)][, F180_DTE:= as.Date(F180_DTE)][order(F180_DTE)] %>% as_tibble()
+toplot <- left_join(counts, lgd_mean) %>% pivot_longer(-F180_DTE)
+counts %>% ggplot(aes(x=F180_DTE, y = N)) + geom_line(color = "red") + geom_line(data = lgd_mean, aes(y = V1*max(counts$N)), color = "blue")
 
 
 
